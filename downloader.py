@@ -1,4 +1,3 @@
-import os
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -15,8 +14,23 @@ def get_album_info(album_url):
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(album_url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
-    title = soup.find("title").text.strip()
+    raw_title = soup.find("title").text.strip()
 
+    # Clean title: prefer <h2> (just the game name), append year from <title> if found
+    h2 = soup.find("h2")
+    if h2:
+        clean_name = h2.text.strip()
+    else:
+        # Fallback: strip " MP3 - Download..." suffix from <title>
+        clean_name = re.split(r'\s+MP3\s', raw_title)[0].strip()
+        # Remove parenthetical platform/type tags, keep only year
+        clean_name = re.sub(r'\s*\([^)]*\)\s*', ' ', clean_name).strip()
+
+    # Extract year from raw title
+    year_match = re.search(r'\((\d{4})\)', raw_title)
+    year = year_match.group(1) if year_match else None
+    if year and f"({year})" not in clean_name:
+        clean_name = f"{clean_name} ({year})"
 
     artist = None
     album = None
@@ -29,19 +43,31 @@ def get_album_info(album_url):
             if "Published by" in th.text:
                 artist = td.text.strip().split(",")[0]
             if "Album type" in th.text:
-                album = title
+                album = clean_name
 
     if not album:
-        album = title
+        album = clean_name
     if not artist:
         summary = soup.find("div", class_="albumHeader")
         if summary and "by" in summary.text:
             artist = summary.text.split("by")[-1].split("(")[0].strip()
 
-    # prefer HQ art from template if available
-    hq_art_candidates = get_album_slug_and_hq_cover(album_url)
-    art_urls = []
+    # Extract HD art link from clickable album image (highest priority)
+    hd_art_link = None
     cover_div = soup.find("div", {"class": "albumImage"})
+    if cover_div:
+        a_tag = cover_div.find("a")
+        if a_tag and a_tag.get("href"):
+            href = a_tag["href"]
+            if not href.startswith("http"):
+                href = "https://downloads.khinsider.com" + href
+            hd_art_link = href
+
+    # Template-based HQ art candidates
+    hq_art_candidates = get_album_slug_and_hq_cover(album_url)
+
+    # Page-provided art as fallback
+    art_urls = []
     if cover_div:
         art_tags = cover_div.find_all("img")
         for img in art_tags:
@@ -65,20 +91,43 @@ def get_album_info(album_url):
                     src = "https://downloads.khinsider.com" + src
                 if src not in art_urls:
                     art_urls.append(src)
-    album_art_order = hq_art_candidates + art_urls
 
-    # tracks
+    album_art_order = ([hd_art_link] if hd_art_link else []) + hq_art_candidates + art_urls
+
+    # Detect available formats and sizes from table headers
+    available_formats = []
+    format_sizes = {}
     tracks = []
     track_table = None
     for table in soup.find_all("table"):
-        headers = [th.text.strip() for th in table.find_all("th")]
-        if any("Song Name" in h for h in headers):
+        table_headers = [th.text.strip() for th in table.find_all("th")]
+        if any("Song Name" in h for h in table_headers):
             track_table = table
-            ths = headers
+            ths = table_headers
             break
     if not track_table:
-        raise Exception("Could not find tracklist table. Found tables: " +
-                        str([ [th.text.strip() for th in t.find_all("th")] for t in soup.find_all("table") ]))
+        raise Exception("Could not find tracklist table.")
+
+    # Find format columns and their sizes from the header row
+    # Headers look like: ['', '#', 'Song Name', 'MP3', 'FLAC', '', '', 'Total:', '1h 56m', '239 MB', '1,740 MB', '']
+    fmt_col_indices = []
+    for idx_h, h in enumerate(ths):
+        h_upper = h.upper()
+        if h_upper in ("MP3", "FLAC", "OGG"):
+            available_formats.append(h_upper)
+            fmt_col_indices.append((h_upper, idx_h))
+    if not available_formats:
+        available_formats = ["MP3"]
+
+    # Extract sizes: after "Total:" in headers, sizes align with format columns
+    if "Total:" in ths:
+        total_idx = ths.index("Total:")
+        # The size values follow Total: and duration, matching format column order
+        size_values = [h for h in ths[total_idx+1:] if "MB" in h or "GB" in h]
+        for i, (fmt_name, _) in enumerate(fmt_col_indices):
+            if i < len(size_values):
+                format_sizes[fmt_name] = size_values[i]
+
     try:
         name_col_idx = ths.index("Song Name")
     except ValueError:
@@ -96,16 +145,26 @@ def get_album_info(album_url):
             "page_url": "https://downloads.khinsider.com" + link["href"]
         })
 
-    return {"title": title, "art_urls": album_art_order, "tracks": tracks, "artist": artist, "album": album}
+    return {
+        "title": clean_name,
+        "art_urls": album_art_order,
+        "tracks": tracks,
+        "artist": artist,
+        "album": album,
+        "formats": available_formats,
+        "format_sizes": format_sizes,
+    }
 
 def get_download_link(track_page_url, fmt="MP3"):
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(track_page_url, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
     allowed_domains = ("downloads.khinsider.com", "vgmtreasurechest.com", "vgmsite.com")
+    ext_map = {"MP3": ".mp3", "FLAC": ".flac", "OGG": ".ogg"}
+    target_ext = ext_map.get(fmt.upper(), f".{fmt.lower()}")
     for a in soup.find_all("a"):
         href = a.get("href", "")
-        if href and (fmt.lower() in href.lower()) and (href.lower().endswith('.mp3') or href.lower().endswith('.ogg')):
+        if href and href.lower().endswith(target_ext):
             if not href.startswith("http"):
                 href = "https://downloads.khinsider.com" + href
             domain = urlparse(href).netloc

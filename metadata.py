@@ -16,11 +16,13 @@ def embed_album_art(mp3_file, art_path, title=None, artist=None, album=None, tra
     if track_number:
         audio.tags['TRCK'] = TRCK(encoding=3, text=str(track_number))
     with open(art_path, 'rb') as img:
+        data = img.read()
+        mime = 'image/png' if data[:4] == b'\x89PNG' else 'image/jpeg'
         audio.tags['APIC'] = APIC(
             encoding=3,
-            mime='image/jpeg',
+            mime=mime,
             type=3,
             desc=u'Cover',
-            data=img.read()
+            data=data
         )
     audio.save()
