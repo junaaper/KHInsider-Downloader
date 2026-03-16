@@ -1,73 +1,45 @@
-# KHInsider Album Downloader (CLI)
+# KHInsider Downloader
 
-A fast, fully automated __command-line tool__ for downloading entire soundtracks from [KHInsider](https://downloads.khinsider.com/) complete with album art, track metadata, artist, album, and track numbers.  
+A desktop app for downloading soundtracks from [KHInsider](https://downloads.khinsider.com/). Grabs full albums in MP3 or FLAC, embeds HD album art and metadata into every track.
 
----
+![screenshot](screenshot.png)
 
-## Features
+## Download
 
-- **Batch download** any KHInsider album by URL
-- __Automatic tagging__:  
-  - Sets track number, album name, track title, artist (parsed from the site)
-  - Album art embedded in every MP3  
-- **Multi-threaded**: Downloads up to 4 tracks at a time for speed (customizable)
-- **Beautiful progress bars** with `tqdm`
----
+Grab the latest `.exe` from the [Releases](https://github.com/junaaper/KHInsider-Downloader/releases) page — no Python install needed.
 
-## Quickstart
+## What it does
 
-1. **Install dependencies**:
-    ```bash
-    pip install requests beautifulsoup4 mutagen tqdm
-    ```
+- Downloads full albums by pasting a KHInsider URL
+- Supports **MP3**, **FLAC**, or **both** (saves into separate subfolders)
+- Fetches HD album art from the page and embeds it into MP3 tags
+- Tags tracks with title, artist, album name, and track number
+- Shows per-track progress with download speed and file sizes
+- Displays total album size per format before you download
+- 4 concurrent downloads
 
-2. **Clone this repo**:
-    ```bash
-    git clone https://github.com/yourusername/khinsider-downloader.git
-    cd khinsider-downloader
-    ```
+## Running from source
 
-3. **Run the script!**
-    ```bash
-    python main.py
-    ```
-
-    You will be prompted for:
-    - The KHInsider album URL  
-    - The folder where you want the album to be saved
-
-    Example:
-    ```
-    Album URL: https://downloads.khinsider.com/game-soundtracks/album/sifu-2022
-    Where do you want to save the album? (enter full folder path): C:\Music
-    ```
-    Another way to use it:
-    ```bash
-    python main.py --url "https://downloads.khinsider.com/game-soundtracks/album/mario-kart-8-full-gamerip" --folder "C:\Music"
-    ```
-
-
-All tracks will be saved to:
-C:\Music\Sifu (2022)\01. Martial Mastery.mp3, etc.
-
-
-## Settings
-Threads:
-By default, downloads up to 4 tracks at once. You can change this in main.py:
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-
-## Requirements
-
-    requests
-
-    beautifulsoup4
-
-    tqdm
-
-    mutagen
-
-Install them with:
-```bash
-pip install requests beautifulsoup4 mutagen tqdm
 ```
+pip install requests beautifulsoup4 mutagen pillow
+```
+
+```
+git clone https://github.com/junaaper/KHInsider-Downloader.git
+cd KHInsider-Downloader
+python main.py
+```
+
+## Building the exe
+
+```
+pip install pyinstaller
+python -m PyInstaller --onefile --windowed --name "KHInsider Downloader" --icon=app.ico main.py
+```
+
+The exe will be in `dist/`.
+
+## Branches
+
+- `main` — current GUI version
+- `cli` — original command-line version
